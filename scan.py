@@ -45,7 +45,7 @@ def main():
             dt_max_i = i
         score_sum += score
         score_norm += 1
-        print(i, score, dt, score_max, score_max_i, dt_max, dt_max_i)
+        print(i, score, dt, "MAX:{}({})".format(score_max, score_max_i), "SLOW:{}({})".format(dt_max, dt_max_i), int(score_sum / score_norm))
     print(int(score_sum / score_norm))
 
 if __name__ == "__main__":

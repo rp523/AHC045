@@ -6350,6 +6350,8 @@ impl Solver {
             .collect_vec();
         let mut g0 = vec![vec![]; self.n];
         let mut rand = XorShift64::new();
+        const INF: i64 = 1i64 << 60;
+        let mut nearest = vec![INF; self.n];
         for (b, bbox) in self.ini_boxes.iter().enumerate() {
             for (a, abox) in self.ini_boxes.iter().take(b).enumerate() {
                 const NORM: i64 = 100;
@@ -6371,6 +6373,8 @@ impl Solver {
                 let d = dsum / NORM;
                 g0[a].push((b, d));
                 g0[b].push((a, d));
+                nearest[a].chmin(d);
+                nearest[b].chmin(d);
             }
         }
         g0.iter_mut()
@@ -6388,6 +6392,16 @@ impl Solver {
         };
         let mut answers = vec![];
         let mut used = vec![false; self.n];
+        {
+            let mut iso = (0..self.n).collect_vec();
+            iso.sort_by_cached_key(|&i| nearest[i]);
+            while grp.contains_key(&1) {
+                let i = iso.pop().unwrap();
+                used[i] = true;
+                answers.push((vec![i], vec![]));
+                grp.decr(&1);
+            }
+        }
         loop {
             let mut ch = ConvexHull::new();
             for &(y, x) in centers.iter() {
@@ -6403,11 +6417,6 @@ impl Solver {
                 let mut que = std::collections::BinaryHeap::new();
                 let mut sz = 1;
                 let mut now = 0;
-                if grp.contains_key(&sz) {
-                    let ev = Rational::new(now, 1);
-                    best.chmin((ev, sz, ini));
-                    break;
-                }
                 let mut vis = vec![false; self.n];
                 vis[ini] = true;
                 for &(nv, delta) in g0[ini].iter() {
@@ -6450,9 +6459,6 @@ impl Solver {
             'recons: loop {
                 let mut que = std::collections::BinaryHeap::new();
                 let mut sz = 1;
-                if sz == to_sz {
-                    break 'recons;
-                }
                 let mut vis = vec![false; self.n];
                 vis[ini] = true;
                 for &(nv, delta) in g0[ini].iter() {
