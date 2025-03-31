@@ -6349,15 +6349,28 @@ impl Solver {
             .map(|ini_box| ini_box.center())
             .collect_vec();
         let mut g0 = vec![vec![]; self.n];
-        for j in 0..self.n {
-            let (jy, jx) = centers[j];
-            for i in 0..j {
-                let (iy, ix) = centers[i];
-                let dy = (iy as i64 - jy as i64).abs();
-                let dx = (ix as i64 - jx as i64).abs();
-                let d = ((dy * dy + dx * dx) as f64).sqrt() as i64;
-                g0[i].push((j, d));
-                g0[j].push((i, d));
+        let mut rand = XorShift64::new();
+        for (b, bbox) in self.ini_boxes.iter().enumerate() {
+            for (a, abox) in self.ini_boxes.iter().take(b).enumerate() {
+                const NORM: i64 = 100;
+                let mut dsum = 0;
+                for _ in 0..NORM {
+                    let ay =
+                        abox.y0 + (rand.next_usize() % 100000) as i64 % (abox.y1 - abox.y0 + 1);
+                    let ax =
+                        abox.x0 + (rand.next_usize() % 100000) as i64 % (abox.x1 - abox.x0 + 1);
+                    let by =
+                        bbox.y0 + (rand.next_usize() % 100000) as i64 % (bbox.y1 - bbox.y0 + 1);
+                    let bx =
+                        bbox.x0 + (rand.next_usize() % 100000) as i64 % (bbox.x1 - bbox.x0 + 1);
+                    let dy = (ay - by).abs();
+                    let dx = (ax - bx).abs();
+                    let d = ((dy * dy + dx * dx) as f64).sqrt() as i64;
+                    dsum += d;
+                }
+                let d = dsum / NORM;
+                g0[a].push((b, d));
+                g0[b].push((a, d));
             }
         }
         g0.iter_mut()
