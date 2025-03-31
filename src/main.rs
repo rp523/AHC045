@@ -6273,20 +6273,20 @@ fn main() {
 }
 #[derive(Clone, Debug, Copy)]
 struct Box {
-    y0: usize,
-    y1: usize,
-    x0: usize,
-    x1: usize,
+    y0: i64,
+    y1: i64,
+    x0: i64,
+    x1: i64,
 }
 impl Box {
     fn new() -> Box {
-        let x0 = read::<usize>();
-        let x1 = read::<usize>();
-        let y0 = read::<usize>();
-        let y1 = read::<usize>();
+        let x0 = read::<i64>();
+        let x1 = read::<i64>();
+        let y0 = read::<i64>();
+        let y1 = read::<i64>();
         Self { y0, y1, x0, x1 }
     }
-    fn center(&self) -> (usize, usize) {
+    fn center(&self) -> (i64, i64) {
         let y = (self.y0 + self.y1) / 2;
         let x = (self.x0 + self.x1) / 2;
         (y, x)
@@ -6321,163 +6321,6 @@ impl Solver {
             ini_boxes,
         }
     }
-    fn build_mst(&self) -> Vec<Vec<(usize, i64)>> {
-        let centers = self
-            .ini_boxes
-            .iter()
-            .map(|ini_box| ini_box.center())
-            .collect_vec();
-        let mut es = vec![];
-        for (bi, &(by, bx)) in centers.iter().enumerate() {
-            for (ai, &(ay, ax)) in centers.iter().take(bi).enumerate() {
-                let dy = (by as i64 - ay as i64).abs();
-                let dx = (bx as i64 - ax as i64).abs();
-                let d = ((dy.pow(2) + dx.pow(2)) as f64).sqrt() as i64;
-                es.push((d, (ai, bi)));
-            }
-        }
-        es.sort();
-        let mut uf = UnionFind::new(self.n);
-        let mut g = vec![vec![]; self.n];
-        for (d, (a, b)) in es {
-            if uf.same(a, b) {
-                continue;
-            }
-            uf.unite(a, b);
-            g[a].push((b, d));
-            g[b].push((a, d));
-        }
-        g
-    }
-    fn build_rooted_tree(
-        &self,
-        ini: usize,
-        g0: &[Vec<(usize, i64)>],
-    ) -> (Vec<Vec<(usize, i64)>>, Vec<(usize, i64)>) {
-        let mut g = vec![vec![]; self.n];
-        let mut par = vec![(ini, 0); self.n];
-        let mut que = VecDeque::new();
-        que.push_back(ini);
-        let mut vis = vec![false; self.n];
-        vis[ini] = true;
-        while let Some(v0) = que.pop_front() {
-            for &(v1, d) in g0[v0].iter() {
-                if vis[v1] {
-                    continue;
-                }
-                vis[v1] = true;
-                que.push_back(v1);
-                g[v0].push((v1, d));
-                par[v1] = (v0, d);
-            }
-        }
-        (g, par)
-    }
-    fn build_answer(
-        &self,
-        ini: usize,
-        g: &[Vec<(usize, i64)>],
-        par: &[(usize, i64)],
-    ) -> Vec<(Vec<usize>, Vec<(usize, usize)>)> {
-        fn calc_sz(v: usize, g: &[Vec<(usize, i64)>], v_sz: &mut [usize]) -> usize {
-            v_sz[v] = 1;
-            for &(nv, _) in g[v].iter() {
-                v_sz[v] += calc_sz(nv, g, v_sz);
-            }
-            v_sz[v]
-        }
-        let mut v_sz = vec![0; self.n];
-        calc_sz(ini, g, &mut v_sz);
-        let mut sz_v = vec![BTreeSet::new(); self.n + 1];
-        for (i, &sz) in v_sz.iter().enumerate() {
-            assert!(sz_v[sz].insert(i));
-        }
-        let mut sz_grp_rem = vec![0usize; self.n + 1];
-        let mut sz_grp_rem_cnt = 0usize;
-        for &sz_grp in self.tgt_sz.iter() {
-            sz_grp_rem[sz_grp] += 1;
-            sz_grp_rem_cnt += 1;
-        }
-        let mut answers = vec![];
-        debug!(sz_grp_rem_cnt);
-        while sz_grp_rem_cnt > 0 {
-            debug!(sz_grp_rem_cnt);
-            let mut dmax_vlo = (0, self.n);
-            for sz in 1..=self.n {
-                if sz_grp_rem[sz] == 0 {
-                    continue;
-                }
-                for &v_lo in sz_v[sz].iter() {
-                    debug_assert_eq!(sz, v_sz[v_lo]);
-                    let (v_hi, d) = par[v_lo];
-                    if v_lo == v_hi {
-                        continue;
-                    }
-                    dmax_vlo.chmax((d, v_lo));
-                }
-            }
-            let (dmax, mut v_lo) = dmax_vlo;
-            debug!(dmax, v_lo);
-            if dmax == 0 {
-                for sz in 1..=self.n {
-                    if sz_grp_rem[sz] == 0 {
-                        continue;
-                    }
-                    debug!(sz);
-                }
-                debug!(v_sz[ini]);
-                v_lo = ini;
-            }
-            // deactivate
-            let ans = {
-                let mut que = VecDeque::new();
-                que.push_back(v_lo);
-                let mut ans_v = vec![v_lo];
-                let mut ans_e = vec![];
-                let sz = v_sz[v_lo];
-                debug_assert!(sz > 0);
-                sz_grp_rem[sz] -= 1;
-                sz_grp_rem_cnt -= 1;
-                while let Some(v) = que.pop_front() {
-                    // remove
-                    {
-                        let sz0 = v_sz[v];
-                        v_sz[v] = 0;
-                        assert!(sz_v[sz0].remove(&v));
-                    }
-                    // next
-                    for &(nv, _) in g[v].iter() {
-                        if v_sz[nv] == 0 {
-                            continue;
-                        }
-                        ans_v.push(nv);
-                        ans_e.push((v, nv));
-                        que.push_back(nv);
-                    }
-                }
-                debug_assert!(!ans_v.is_empty());
-                (ans_v, ans_e)
-            };
-            answers.push(ans);
-            // update
-            {
-                let mut v = v_lo;
-                while par[v].0 != v {
-                    // rise
-                    v = par[v].0;
-                    let sz0 = v_sz[v];
-                    assert!(sz_v[sz0].remove(&v));
-                    v_sz[v] = 1;
-                    for &(nv, _) in g[v].iter() {
-                        v_sz[v] += v_sz[nv];
-                    }
-                    let sz1 = v_sz[v];
-                    assert!(sz_v[sz1].insert(v));
-                }
-            }
-        }
-        answers
-    }
     fn answer(&self, ans: Vec<(Vec<usize>, Vec<(usize, usize)>)>) {
         let mut nans = BTreeMap::new();
         for (ans_v, ans_e) in ans {
@@ -6500,30 +6343,140 @@ impl Solver {
         }
     }
     fn solve(&self) {
-        let g0 = self.build_mst();
-        for _ in 0..self.q {
-            print!("? ");
-            print!("{} ", self.l);
-            for i in 0..self.l {
-                print!("{i} ");
+        let centers = self
+            .ini_boxes
+            .iter()
+            .map(|ini_box| ini_box.center())
+            .collect_vec();
+        let mut g0 = vec![vec![]; self.n];
+        for j in 0..self.n {
+            let (jy, jx) = centers[j];
+            for i in 0..j {
+                let (iy, ix) = centers[i];
+                let dy = (iy as i64 - jy as i64).abs();
+                let dx = (ix as i64 - jx as i64).abs();
+                let d = ((dy * dy + dx * dx) as f64).sqrt() as i64;
+                g0[i].push((j, d));
+                g0[j].push((i, d));
             }
-            println!();
         }
-        let ini = {
-            let mut ini = self.n;
-            for i in 0..self.n {
-                debug_assert!(!g0[i].is_empty());
-                if g0[i].len() <= 1 {
-                    ini = i;
+        g0.iter_mut()
+            .for_each(|g| g.sort_by_cached_key(|(_, d)| *d));
+        let mut grp = BTreeMap::new();
+        for &sz in self.tgt_sz.iter() {
+            grp.incr(sz);
+        }
+        let enc = {
+            let mut enc = BTreeMap::new();
+            for (i, &(y, x)) in centers.iter().enumerate() {
+                enc.insert((y as i64, x as i64), i);
+            }
+            enc
+        };
+        let mut answers = vec![];
+        let mut used = vec![false; self.n];
+        loop {
+            let mut ch = ConvexHull::new();
+            for &(y, x) in centers.iter() {
+                let i = enc[&(y as i64, x as i64)];
+                if used[i] {
+                    continue;
+                }
+                ch.add(y as i64, x as i64);
+            }
+            let mut best = None;
+            for (y, x) in ch.convex_hull() {
+                let ini = enc[&(y, x)];
+                let mut que = std::collections::BinaryHeap::new();
+                let mut sz = 1;
+                let mut now = 0;
+                if grp.contains_key(&sz) {
+                    let ev = Rational::new(now, 1);
+                    best.chmin((ev, sz, ini));
+                    break;
+                }
+                let mut vis = vec![false; self.n];
+                vis[ini] = true;
+                for &(nv, delta) in g0[ini].iter() {
+                    if used[nv] {
+                        continue;
+                    }
+                    que.push((Reverse(delta), nv));
+                }
+                while let Some((Reverse(delta), nxt_v)) = que.pop() {
+                    if vis[nxt_v] {
+                        continue;
+                    }
+                    // expand
+                    vis[nxt_v] = true;
+                    sz += 1;
+                    now += delta;
+                    if grp.contains_key(&sz) {
+                        let ev = Rational::new(now, sz as i64 - 1);
+                        best.chmin((ev, sz, ini));
+                    }
+                    for &(new_v, new_delta) in g0[nxt_v].iter() {
+                        if used[new_v] {
+                            continue;
+                        }
+                        if vis[new_v] {
+                            continue;
+                        }
+                        que.push((Reverse(new_delta), new_v));
+                    }
+                }
+                if best.is_some() {
                     break;
                 }
             }
-            debug_assert_ne!(ini, self.n);
-            ini
-        };
-        let (g, par) = self.build_rooted_tree(ini, &g0);
-        debug_assert!(!g[ini].is_empty());
-        let ans = self.build_answer(ini, &g, &par);
-        self.answer(ans);
+            let Some((_, to_sz, ini)) = best else {
+                break;
+            };
+            let mut ans_v = vec![ini];
+            let mut ans_e = vec![];
+            'recons: loop {
+                let mut que = std::collections::BinaryHeap::new();
+                let mut sz = 1;
+                if sz == to_sz {
+                    break 'recons;
+                }
+                let mut vis = vec![false; self.n];
+                vis[ini] = true;
+                for &(nv, delta) in g0[ini].iter() {
+                    if used[nv] {
+                        continue;
+                    }
+                    que.push((Reverse(delta), nv, ini));
+                }
+                while let Some((Reverse(_delta), nxt_v, pre_v)) = que.pop() {
+                    if vis[nxt_v] {
+                        continue;
+                    }
+                    // expand
+                    ans_v.push(nxt_v);
+                    ans_e.push((pre_v, nxt_v));
+                    vis[nxt_v] = true;
+                    sz += 1;
+                    if sz == to_sz {
+                        break 'recons;
+                    }
+                    for &(new_v, new_delta) in g0[nxt_v].iter() {
+                        if used[new_v] {
+                            continue;
+                        }
+                        if vis[new_v] {
+                            continue;
+                        }
+                        que.push((Reverse(new_delta), new_v, nxt_v));
+                    }
+                }
+            }
+            grp.decr(&ans_v.len());
+            for &v in ans_v.iter() {
+                used[v] = true;
+            }
+            answers.push((ans_v, ans_e));
+        }
+        self.answer(answers);
     }
 }
