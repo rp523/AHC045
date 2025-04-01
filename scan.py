@@ -22,7 +22,8 @@ def main():
     score_max_i = -1
     dt_max = -1
     dt_max_i = -1
-    with open("score1.csv", "w") as f:
+    csv_path = Path("score1.csv")
+    with open(csv_path, "w") as f:
         for i in range(100):
             cmd = r"tester.exe"
             cmd += r" " + str(bin_path)
@@ -49,6 +50,7 @@ def main():
             print(i, score, dt, "MAX:{}({})".format(score_max, score_max_i), "SLOW:{}({})".format(dt_max, dt_max_i), int(score_sum / score_norm))
             f.write("{}\n".format(score))
     print(int(score_sum / score_norm))
+    getoutput("explorer {}".format(csv_path))
 
 if __name__ == "__main__":
     main()

@@ -6343,29 +6343,54 @@ impl Solver {
         }
     }
     fn solve(&self) {
-        let mut rand = XorShift64::new();
         const INF: i64 = 1i64 << 60;
         let es = {
+            const DIV: i64 = 4;
             let mut es = vec![];
-            for (b, bbox) in self.ini_boxes.iter().enumerate() {
-                for (a, abox) in self.ini_boxes.iter().take(b).enumerate() {
-                    const NORM: i64 = 10;
-                    let mut dsum = 0;
-                    for _ in 0..NORM {
-                        let ay =
-                            abox.y0 + (rand.next_usize() % 100000) as i64 % (abox.y1 - abox.y0 + 1);
-                        let ax =
-                            abox.x0 + (rand.next_usize() % 100000) as i64 % (abox.x1 - abox.x0 + 1);
-                        let by =
-                            bbox.y0 + (rand.next_usize() % 100000) as i64 % (bbox.y1 - bbox.y0 + 1);
-                        let bx =
-                            bbox.x0 + (rand.next_usize() % 100000) as i64 % (bbox.x1 - bbox.x0 + 1);
-                        let dy = (ay - by).abs();
-                        let dx = (ax - bx).abs();
-                        let d = ((dy * dy + dx * dx) as f64).sqrt() as i64;
-                        dsum += d;
-                    }
-                    let d = dsum / NORM;
+            let ys = self
+                .ini_boxes
+                .iter()
+                .map(|ini_box| {
+                    let dy = (ini_box.y1 - ini_box.y0 + 1) / DIV;
+                    (0..DIV)
+                        .map(|di| ini_box.y0 + (2 * di + 1) * dy / 2)
+                        .collect_vec()
+                })
+                .collect_vec();
+            let xs = self
+                .ini_boxes
+                .iter()
+                .map(|ini_box| {
+                    let dx = (ini_box.x1 - ini_box.x0 + 1) / DIV;
+                    (0..DIV)
+                        .map(|di| ini_box.x0 + (2 * di + 1) * dx / 2)
+                        .collect_vec()
+                })
+                .collect_vec();
+            for (b, (bys, bxs)) in ys.iter().zip(xs.iter()).enumerate() {
+                for (a, (ays, axs)) in ys.iter().zip(xs.iter()).take(b).enumerate() {
+                    let d = bys
+                        .iter()
+                        .map(|by| {
+                            ays.iter()
+                                .map(|ay| {
+                                    let dy = (ay - by).abs();
+                                    bxs.iter()
+                                        .map(|bx| {
+                                            axs.iter()
+                                                .map(|ax| {
+                                                    let dx = (ax - bx).abs();
+                                                    // calc
+                                                    ((dy * dy + dx * dx) as f64).sqrt() as i64
+                                                })
+                                                .sum::<i64>()
+                                        })
+                                        .sum::<i64>()
+                                })
+                                .sum::<i64>()
+                        })
+                        .sum::<i64>()
+                        / DIV.pow(4);
                     es.push((d, (a, b)));
                 }
             }
