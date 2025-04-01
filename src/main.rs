@@ -6343,159 +6343,138 @@ impl Solver {
         }
     }
     fn solve(&self) {
-        let centers = self
-            .ini_boxes
-            .iter()
-            .map(|ini_box| ini_box.center())
-            .collect_vec();
-        let mut g0 = vec![vec![]; self.n];
         let mut rand = XorShift64::new();
         const INF: i64 = 1i64 << 60;
-        let mut nearest = vec![INF; self.n];
-        for (b, bbox) in self.ini_boxes.iter().enumerate() {
-            for (a, abox) in self.ini_boxes.iter().take(b).enumerate() {
-                const NORM: i64 = 100;
-                let mut dsum = 0;
-                for _ in 0..NORM {
-                    let ay =
-                        abox.y0 + (rand.next_usize() % 100000) as i64 % (abox.y1 - abox.y0 + 1);
-                    let ax =
-                        abox.x0 + (rand.next_usize() % 100000) as i64 % (abox.x1 - abox.x0 + 1);
-                    let by =
-                        bbox.y0 + (rand.next_usize() % 100000) as i64 % (bbox.y1 - bbox.y0 + 1);
-                    let bx =
-                        bbox.x0 + (rand.next_usize() % 100000) as i64 % (bbox.x1 - bbox.x0 + 1);
-                    let dy = (ay - by).abs();
-                    let dx = (ax - bx).abs();
-                    let d = ((dy * dy + dx * dx) as f64).sqrt() as i64;
-                    dsum += d;
+        let es = {
+            let mut es = vec![];
+            for (b, bbox) in self.ini_boxes.iter().enumerate() {
+                for (a, abox) in self.ini_boxes.iter().take(b).enumerate() {
+                    const NORM: i64 = 10;
+                    let mut dsum = 0;
+                    for _ in 0..NORM {
+                        let ay =
+                            abox.y0 + (rand.next_usize() % 100000) as i64 % (abox.y1 - abox.y0 + 1);
+                        let ax =
+                            abox.x0 + (rand.next_usize() % 100000) as i64 % (abox.x1 - abox.x0 + 1);
+                        let by =
+                            bbox.y0 + (rand.next_usize() % 100000) as i64 % (bbox.y1 - bbox.y0 + 1);
+                        let bx =
+                            bbox.x0 + (rand.next_usize() % 100000) as i64 % (bbox.x1 - bbox.x0 + 1);
+                        let dy = (ay - by).abs();
+                        let dx = (ax - bx).abs();
+                        let d = ((dy * dy + dx * dx) as f64).sqrt() as i64;
+                        dsum += d;
+                    }
+                    let d = dsum / NORM;
+                    es.push((d, (a, b)));
                 }
-                let d = dsum / NORM;
-                g0[a].push((b, d));
-                g0[b].push((a, d));
-                nearest[a].chmin(d);
-                nearest[b].chmin(d);
             }
-        }
-        g0.iter_mut()
-            .for_each(|g| g.sort_by_cached_key(|(_, d)| *d));
-        let mut grp = BTreeMap::new();
-        for &sz in self.tgt_sz.iter() {
-            grp.incr(sz);
-        }
-        let enc = {
-            let mut enc = BTreeMap::new();
-            for (i, &(y, x)) in centers.iter().enumerate() {
-                enc.insert((y as i64, x as i64), i);
-            }
-            enc
+            es.sort();
+            es
         };
-        let mut answers = vec![];
-        let mut used = vec![false; self.n];
-        {
-            let mut iso = (0..self.n).collect_vec();
-            iso.sort_by_cached_key(|&i| nearest[i]);
-            while grp.contains_key(&1) {
-                let i = iso.pop().unwrap();
-                used[i] = true;
-                answers.push((vec![i], vec![]));
-                grp.decr(&1);
+        let mx = {
+            let mut mx = 0;
+            for &sz in self.tgt_sz.iter() {
+                mx.chmax(sz);
             }
-        }
+            mx
+        };
+        let cap = {
+            let mut cap = vec![0; mx + 2];
+            for &sz in self.tgt_sz.iter() {
+                cap[sz] += 1;
+            }
+            for cap in cap.iter() {
+                eprint!("{cap},");
+            }
+            eprintln!();
+            for sz in (0..mx).rev() {
+                cap[sz] += cap[sz + 1];
+            }
+            cap
+        };
+        let mut uf = UnionFind::new(self.n);
         loop {
-            let mut ch = ConvexHull::new();
-            for &(y, x) in centers.iter() {
-                let i = enc[&(y as i64, x as i64)];
-                if used[i] {
+            let mut fin = true;
+            let mut now = SegmentTree::<usize>::from_vec(|x, y| x + y, vec![0; mx + 1]);
+            for v in 0..self.n {
+                if uf.root(v) != v {
                     continue;
                 }
-                ch.add(y as i64, x as i64);
+                now.add(uf.group_size(v), 1);
             }
-            let mut best = None;
-            for (y, x) in ch.convex_hull() {
-                let ini = enc[&(y, x)];
-                let mut que = std::collections::BinaryHeap::new();
-                let mut sz = 1;
-                let mut now = 0;
-                let mut vis = vec![false; self.n];
-                vis[ini] = true;
-                for &(nv, delta) in g0[ini].iter() {
-                    if used[nv] {
-                        continue;
-                    }
-                    que.push((Reverse(delta), nv));
+            for &(_, (a, b)) in es.iter() {
+                if uf.same(a, b) {
+                    continue;
                 }
-                while let Some((Reverse(delta), nxt_v)) = que.pop() {
-                    if vis[nxt_v] {
-                        continue;
-                    }
-                    // expand
-                    vis[nxt_v] = true;
-                    sz += 1;
-                    now += delta;
-                    if grp.contains_key(&sz) {
-                        let ev = Rational::new(now, sz as i64 - 1);
-                        best.chmin((ev, sz, ini));
-                    }
-                    for &(new_v, new_delta) in g0[nxt_v].iter() {
-                        if used[new_v] {
-                            continue;
-                        }
-                        if vis[new_v] {
-                            continue;
-                        }
-                        que.push((Reverse(new_delta), new_v));
-                    }
+                let sz_a = uf.group_size(a);
+                let sz_b = uf.group_size(b);
+                let sz_ab = sz_a + sz_b;
+                if sz_ab > mx || now.query(sz_ab, mx) + 1 > cap[sz_ab] {
+                    continue;
                 }
-                if best.is_some() {
-                    break;
+                uf.unite(a, b);
+                now.sub(sz_a, 1);
+                now.sub(sz_b, 1);
+                now.add(sz_ab, 1);
+                debug_assert!(now.query(sz_ab, mx) <= cap[sz_ab]);
+            }
+            let mut uf_nxt = UnionFind::new(self.n);
+            for v in 0..self.n {
+                if uf.root(v) != v {
+                    continue;
+                }
+                let sz = uf.group_size(v);
+                if now.get(sz) == cap[sz] - cap[sz + 1] {
+                    let mut que = VecDeque::new();
+                    que.push_back(v);
+                    let mut seen = HashSet::new();
+                    seen.insert(v);
+                    while let Some(v0) = que.pop_front() {
+                        for &v1 in uf.graph[v0].iter() {
+                            if !seen.insert(v1) {
+                                continue;
+                            }
+                            que.push_back(v1);
+                            uf_nxt.unite(v0, v1);
+                        }
+                    }
+                } else {
+                    fin = false;
                 }
             }
-            let Some((_, to_sz, ini)) = best else {
+            uf = uf_nxt;
+            (0..=mx).for_each(|i| eprint!("{},", now.get(i)));
+            eprintln!();
+            debug!(uf.group_num());
+            if fin {
                 break;
-            };
-            let mut ans_v = vec![ini];
-            let mut ans_e = vec![];
-            'recons: loop {
-                let mut que = std::collections::BinaryHeap::new();
-                let mut sz = 1;
-                let mut vis = vec![false; self.n];
-                vis[ini] = true;
-                for &(nv, delta) in g0[ini].iter() {
-                    if used[nv] {
-                        continue;
-                    }
-                    que.push((Reverse(delta), nv, ini));
-                }
-                while let Some((Reverse(_delta), nxt_v, pre_v)) = que.pop() {
-                    if vis[nxt_v] {
-                        continue;
-                    }
-                    // expand
-                    ans_v.push(nxt_v);
-                    ans_e.push((pre_v, nxt_v));
-                    vis[nxt_v] = true;
-                    sz += 1;
-                    if sz == to_sz {
-                        break 'recons;
-                    }
-                    for &(new_v, new_delta) in g0[nxt_v].iter() {
-                        if used[new_v] {
-                            continue;
-                        }
-                        if vis[new_v] {
-                            continue;
-                        }
-                        que.push((Reverse(new_delta), new_v, nxt_v));
-                    }
-                }
             }
-            grp.decr(&ans_v.len());
-            for &v in ans_v.iter() {
-                used[v] = true;
-            }
-            answers.push((ans_v, ans_e));
         }
-        self.answer(answers);
+        let mut ans = vec![];
+        let mut vis = vec![false; self.n];
+        let mut que = VecDeque::new();
+        for v in 0..self.n {
+            if vis[v] {
+                continue;
+            }
+            vis[v] = true;
+            que.push_back(v);
+            let mut ans_v = vec![v];
+            let mut ans_e = vec![];
+            while let Some(v0) = que.pop_front() {
+                for &v1 in uf.graph[v0].iter() {
+                    if vis[v1] {
+                        continue;
+                    }
+                    vis[v1] = true;
+                    que.push_back(v1);
+                    ans_v.push(v1);
+                    ans_e.push((v0, v1));
+                }
+            }
+            ans.push((ans_v, ans_e));
+        }
+        self.answer(ans);
     }
 }

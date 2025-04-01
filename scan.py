@@ -22,30 +22,32 @@ def main():
     score_max_i = -1
     dt_max = -1
     dt_max_i = -1
-    for i in range(100):
-        cmd = r"tester.exe"
-        cmd += r" " + str(bin_path)
-        cmd += r" < tools\in\{0:04d}.txt".format(i)
-        cmd += r" > tools\out\{0:04d}.txt".format(i)
-        t0 = time.time()
-        ret = getoutput(cmd)
-        t1 = time.time()
-        dt = int(1000 * (t1 - t0))
-        try:
-            score = int(ret.split()[-1])
-        except:
-            print(i)
-            print(ret)
-            return
-        if score_max < score:
-            score_max = score
-            score_max_i = i
-        if dt_max < dt:
-            dt_max = dt
-            dt_max_i = i
-        score_sum += score
-        score_norm += 1
-        print(i, score, dt, "MAX:{}({})".format(score_max, score_max_i), "SLOW:{}({})".format(dt_max, dt_max_i), int(score_sum / score_norm))
+    with open("score1.csv", "w") as f:
+        for i in range(100):
+            cmd = r"tester.exe"
+            cmd += r" " + str(bin_path)
+            cmd += r" < tools\in\{0:04d}.txt".format(i)
+            cmd += r" > tools\out\{0:04d}.txt".format(i)
+            t0 = time.time()
+            ret = getoutput(cmd)
+            t1 = time.time()
+            dt = int(1000 * (t1 - t0))
+            try:
+                score = int(ret.split()[-1])
+            except:
+                print(i)
+                print(ret)
+                return
+            if score_max < score:
+                score_max = score
+                score_max_i = i
+            if dt_max < dt:
+                dt_max = dt
+                dt_max_i = i
+            score_sum += score
+            score_norm += 1
+            print(i, score, dt, "MAX:{}({})".format(score_max, score_max_i), "SLOW:{}({})".format(dt_max, dt_max_i), int(score_sum / score_norm))
+            f.write("{}\n".format(score))
     print(int(score_sum / score_norm))
 
 if __name__ == "__main__":
