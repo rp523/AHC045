@@ -45,8 +45,9 @@ def main():
             if dt_max < dt:
                 dt_max = dt
                 dt_max_i = i
-            score_sum += score
-            score_norm += 1
+            if score > 0:
+                score_sum += score
+                score_norm += 1
             print(i, score, dt, "MAX:{}({})".format(score_max, score_max_i), "SLOW:{}({})".format(dt_max, dt_max_i), int(score_sum / score_norm))
             f.write("{}\n".format(score))
     print(int(score_sum / score_norm))
