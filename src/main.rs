@@ -315,17 +315,15 @@ mod union_find {
     #[derive(Debug, Clone)]
     pub struct UnionFind {
         pub graph: Vec<Vec<usize>>,
-        potential: Vec<i64>,
-        parents: Vec<usize>,
-        grp_sz: Vec<usize>,
-        grp_num: usize,
+        pub parents: Vec<usize>,
+        pub grp_sz: Vec<usize>,
+        pub grp_num: usize,
     }
 
     impl UnionFind {
         pub fn new(sz: usize) -> Self {
             Self {
                 graph: vec![vec![]; sz],
-                potential: vec![0; sz],
                 parents: (0..sz).collect::<Vec<usize>>(),
                 grp_sz: vec![1; sz],
                 grp_num: sz,
@@ -337,31 +335,20 @@ mod union_find {
             } else {
                 let pv = self.parents[v];
                 let rv = self.root(pv);
-                self.potential[v] += self.potential[pv];
                 self.parents[v] = rv;
                 self.parents[v]
             }
-        }
-        pub fn get_delta(&mut self, v0: usize, v1: usize) -> Option<i64> {
-            if !self.same(v0, v1) {
-                return None;
-            }
-            Some(self.potential[v1] - self.potential[v0])
         }
         pub fn same(&mut self, a: usize, b: usize) -> bool {
             self.root(a) == self.root(b)
         }
         pub fn unite(&mut self, into: usize, from: usize) {
-            self.unite_with_delta(into, from, 0);
-        }
-        pub fn unite_with_delta(&mut self, into: usize, from: usize, delta: i64) {
             self.graph[into].push(from);
             self.graph[from].push(into);
             let r_into = self.root(into);
             let r_from = self.root(from);
             if r_into != r_from {
                 self.parents[r_from] = r_into;
-                self.potential[r_from] = self.potential[into] - self.potential[from] + delta;
                 self.grp_sz[r_into] += self.grp_sz[r_from];
                 self.grp_sz[r_from] = 0;
                 self.grp_num -= 1;
@@ -6346,7 +6333,7 @@ impl Solver {
         const INF: i64 = 1i64 << 60;
         let es = {
             const DIV: i64 = 4;
-            let mut es = vec![];
+            let mut es = Vec::with_capacity((self.n * (self.n - 1)) / 2);
             let ys = self
                 .ini_boxes
                 .iter()
@@ -6409,25 +6396,15 @@ impl Solver {
             for &sz in self.tgt_sz.iter() {
                 cap[sz] += 1;
             }
-            for cap in cap.iter() {
-                eprint!("{cap},");
-            }
-            eprintln!();
             for sz in (0..mx).rev() {
                 cap[sz] += cap[sz + 1];
             }
             cap
         };
         let mut uf = UnionFind::new(self.n);
+        let mut now = SegmentTree::<usize>::from_vec(|x, y| x + y, vec![0; mx + 1]);
+        now.add(1, self.n);
         loop {
-            let mut fin = true;
-            let mut now = SegmentTree::<usize>::from_vec(|x, y| x + y, vec![0; mx + 1]);
-            for v in 0..self.n {
-                if uf.root(v) != v {
-                    continue;
-                }
-                now.add(uf.group_size(v), 1);
-            }
             for &(_, (a, b)) in es.iter() {
                 if uf.same(a, b) {
                     continue;
@@ -6444,35 +6421,39 @@ impl Solver {
                 now.add(sz_ab, 1);
                 debug_assert!(now.query(sz_ab, mx) <= cap[sz_ab]);
             }
-            let mut uf_nxt = UnionFind::new(self.n);
+            let mut ng_roots = vec![];
             for v in 0..self.n {
                 if uf.root(v) != v {
                     continue;
                 }
                 let sz = uf.group_size(v);
-                if now.get(sz) == cap[sz] - cap[sz + 1] {
-                    let mut que = VecDeque::new();
-                    que.push_back(v);
-                    let mut seen = HashSet::new();
-                    seen.insert(v);
-                    while let Some(v0) = que.pop_front() {
-                        for &v1 in uf.graph[v0].iter() {
-                            if !seen.insert(v1) {
-                                continue;
-                            }
-                            que.push_back(v1);
-                            uf_nxt.unite(v0, v1);
-                        }
-                    }
-                } else {
-                    fin = false;
+                if now.get(sz) != cap[sz] - cap[sz + 1] {
+                    ng_roots.push(v);
                 }
             }
-            uf = uf_nxt;
-            (0..=mx).for_each(|i| eprint!("{},", now.get(i)));
-            eprintln!();
-            debug!(uf.group_num());
-            if fin {
+            for &v in &ng_roots {
+                let mut que = VecDeque::new();
+                que.push_back(v);
+                let mut seen = HashSet::new();
+                seen.insert(v);
+                while let Some(v0) = que.pop_front() {
+                    for &v1 in uf.graph[v0].iter() {
+                        if !seen.insert(v1) {
+                            continue;
+                        }
+                        que.push_back(v1);
+                    }
+                }
+                now.sub(seen.len(), 1);
+                now.add(1, seen.len());
+                uf.grp_num += seen.len() - 1;
+                for v in seen {
+                    uf.parents[v] = v;
+                    uf.grp_sz[v] = 1;
+                    uf.graph[v].clear();
+                }
+            }
+            if ng_roots.is_empty() {
                 break;
             }
         }
