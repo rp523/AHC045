@@ -6434,7 +6434,7 @@ impl Solver {
             for &v in &ng_roots {
                 let mut que = VecDeque::new();
                 que.push_back(v);
-                let mut seen = HashSet::new();
+                let mut seen = BTreeSet::new();
                 seen.insert(v);
                 while let Some(v0) = que.pop_front() {
                     for &v1 in uf.graph[v0].iter() {
@@ -6457,30 +6457,144 @@ impl Solver {
                 break;
             }
         }
+        let ans = self.build_answer(uf);
+        self.answer(ans);
+    }
+    fn build_answer(&self, mut uf: UnionFind) -> Vec<(Vec<usize>, Vec<(usize, usize)>)> {
         let mut ans = vec![];
-        let mut vis = vec![false; self.n];
-        let mut que = VecDeque::new();
+        let mut nuf = UnionFind::new(self.n);
+        let mut ecnt = vec![vec![0; self.n]; self.n];
         for v in 0..self.n {
-            if vis[v] {
+            if v != uf.root(v) {
                 continue;
             }
-            vis[v] = true;
-            que.push_back(v);
-            let mut ans_v = vec![v];
-            let mut ans_e = vec![];
-            while let Some(v0) = que.pop_front() {
-                for &v1 in uf.graph[v0].iter() {
-                    if vis[v1] {
-                        continue;
+            if uf.group_size(v) == 1 {
+                ans.push((vec![v], vec![]));
+                continue;
+            }
+            if uf.group_size(v) == 2 {
+                let nv = uf.graph[v][0];
+                ans.push((vec![v, nv], vec![(v, nv)]));
+                continue;
+            }
+            if uf.group_size(v) <= self.l {
+                let mut que = VecDeque::new();
+                que.push_back(v);
+                let mut ans_v = BTreeSet::new();
+                ans_v.insert(v);
+                while let Some(v0) = que.pop_front() {
+                    for &v1 in uf.graph[v0].iter() {
+                        if !ans_v.insert(v1) {
+                            continue;
+                        }
+                        que.push_back(v1);
                     }
-                    vis[v1] = true;
-                    que.push_back(v1);
-                    ans_v.push(v1);
-                    ans_e.push((v0, v1));
                 }
+                let mut ans_e = vec![];
+                {
+                    print!("? {}", ans_v.len());
+                    for &v in ans_v.iter() {
+                        print!(" {v}");
+                    }
+                    println!();
+                    for _ in 1..ans_v.len() {
+                        let a = read::<usize>();
+                        let b = read::<usize>();
+                        ans_e.push((a, b));
+                    }
+                }
+                ans.push((ans_v.into_iter().collect_vec(), ans_e));
+                continue;
+            }
+            let ans_v = {
+                let mut que = VecDeque::new();
+                que.push_back(v);
+                let mut ans_v = BTreeSet::new();
+                ans_v.insert(v);
+                while let Some(v0) = que.pop_front() {
+                    for &v1 in uf.graph[v0].iter() {
+                        if !ans_v.insert(v1) {
+                            continue;
+                        }
+                        que.push_back(v1);
+                    }
+                }
+                ans_v.into_iter().collect_vec()
+            };
+            let (cnt, col) = {
+                let mut que = VecDeque::new();
+                let mut col = BTreeMap::new();
+                let mut cnt = vec![1, 0];
+                col.insert(v, 0);
+                que.push_back(v);
+                while let Some(v0) = que.pop_front() {
+                    let d0 = col[&v0];
+                    let d1 = d0 ^ 1;
+                    for &v1 in uf.graph[v0].iter() {
+                        debug_assert!((!col.contains_key(&v1)) || (col[&v1] == d1));
+                        if col.insert(v1, d1).is_some() {
+                            continue;
+                        }
+                        que.push_back(v1);
+                        cnt[d1] += 1;
+                    }
+                }
+                (cnt, col)
+            };
+            let tgt_col = if cnt[0] < cnt[1] { 0 } else { 1 };
+            let mut qued = BTreeSet::new();
+            for (v, _col) in col.into_iter().filter(|(_v, col)| col == &tgt_col) {
+                let mut que = VecDeque::new();
+                que.push_back(v);
+                let mut seen = BTreeSet::new();
+                seen.insert(v);
+                'local_bfs: while let Some(v0) = que.pop_front() {
+                    for &v1 in uf.graph[v0].iter() {
+                        if !seen.insert(v1) {
+                            continue;
+                        }
+                        if seen.len() >= self.l {
+                            break 'local_bfs;
+                        }
+                        que.push_back(v1);
+                    }
+                }
+                {
+                    print!("? {}", seen.len());
+                    for &v in seen.iter() {
+                        print!(" {v}");
+                        qued.insert(v);
+                    }
+                    println!();
+                    for _ in 1..seen.len() {
+                        let a = read::<usize>();
+                        let b = read::<usize>();
+                        ecnt[a][b] += 1;
+                    }
+                }
+            }
+            //assert_eq!(ans_v.len(), qued.len());
+            let mut es = {
+                let mut es = vec![];
+                for (i, &v0) in ans_v.iter().enumerate() {
+                    for &v1 in ans_v.iter().take(i) {
+                        let (v0, v1) = if v0 < v1 { (v0, v1) } else { (v1, v0) };
+                        es.push((v0, v1));
+                    }
+                }
+                es
+            };
+            es.sort_by_cached_key(|&(a, b)| ecnt[a][b]);
+            let mut ans_e = vec![];
+            for (a, b) in es.into_iter().rev() {
+                if nuf.same(a, b) {
+                    continue;
+                }
+                nuf.unite(a, b);
+                ans_e.push((a, b));
             }
             ans.push((ans_v, ans_e));
         }
-        self.answer(ans);
+        ans
     }
 }
