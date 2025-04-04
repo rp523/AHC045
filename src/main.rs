@@ -6331,9 +6331,10 @@ impl Solver {
     }
     fn solve(&self) {
         const INF: i64 = 1i64 << 60;
-        let es = {
+        let (es, dist) = {
             const DIV: i64 = 4;
             let mut es = Vec::with_capacity((self.n * (self.n - 1)) / 2);
+            let mut dist = vec![vec![0; self.n]; self.n];
             let ys = self
                 .ini_boxes
                 .iter()
@@ -6379,10 +6380,12 @@ impl Solver {
                         .sum::<i64>()
                         / DIV.pow(4);
                     es.push((d, (a, b)));
+                    dist[a][b] = d;
+                    dist[b][a] = d;
                 }
             }
             es.sort();
-            es
+            (es, dist)
         };
         let mx = {
             let mut mx = 0;
@@ -6457,10 +6460,14 @@ impl Solver {
                 break;
             }
         }
-        let ans = self.build_answer(uf);
+        let ans = self.build_answer(uf, dist);
         self.answer(ans);
     }
-    fn build_answer(&self, mut uf: UnionFind) -> Vec<(Vec<usize>, Vec<(usize, usize)>)> {
+    fn build_answer(
+        &self,
+        mut uf: UnionFind,
+        dist: Vec<Vec<i64>>,
+    ) -> Vec<(Vec<usize>, Vec<(usize, usize)>)> {
         let mut ans = vec![];
         let mut nuf = UnionFind::new(self.n);
         let mut ecnt = vec![vec![0; self.n]; self.n];
@@ -6584,9 +6591,9 @@ impl Solver {
                 }
                 es
             };
-            es.sort_by_cached_key(|&(a, b)| ecnt[a][b]);
+            es.sort_by_cached_key(|&(a, b)| (Reverse(ecnt[a][b]), dist[a][b]));
             let mut ans_e = vec![];
-            for (a, b) in es.into_iter().rev() {
+            for (a, b) in es.into_iter() {
                 if nuf.same(a, b) {
                     continue;
                 }
