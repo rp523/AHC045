@@ -18,6 +18,8 @@ def main():
     assert(bin_path.exists())
     score_sum = 0
     score_norm = 0
+    score_min = -1
+    score_min_i = -1
     score_max = -1
     score_max_i = -1
     dt_max = -1
@@ -42,13 +44,16 @@ def main():
             if score_max < score:
                 score_max = score
                 score_max_i = i
+            if score_min < 0 or score_min > score:
+                score_min = score
+                score_min_i = i
             if dt_max < dt:
                 dt_max = dt
                 dt_max_i = i
             if score > 0:
                 score_sum += score
                 score_norm += 1
-            print(i, score, dt, "MAX:{}({})".format(score_max, score_max_i), "SLOW:{}({})".format(dt_max, dt_max_i), int(score_sum / score_norm))
+            print(i, score, dt, "MAX:{}({})".format(score_max, score_max_i), "MIN:{}({})".format(score_min, score_min_i), "SLOW:{}({})".format(dt_max, dt_max_i), int(score_sum / score_norm))
             f.write("{}\n".format(score))
     print(int(score_sum / score_norm))
     getoutput("explorer {}".format(csv_path))
