@@ -6599,7 +6599,7 @@ impl Solver {
         let mut rand = XorShift64::new();
         for lc in 1.. {
             es.sort_by_cached_key(|((_cnt, dist), _ab)| {
-                *dist + ((rand.next_usize() % 100000000) as i64) % (lc * 100)
+                *dist + ((rand.next_usize() % 100000000) as i64) % (lc * 500)
             });
             eprintln!("{lc}");
             for &(_, (a, b)) in es.iter() {
