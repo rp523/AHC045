@@ -6308,17 +6308,33 @@ impl Solver {
             ini_boxes,
         }
     }
-    fn answer(&self, ans: Vec<(Vec<usize>, Vec<(usize, usize)>)>) {
-        let mut nans = BTreeMap::new();
-        for (ans_v, ans_e) in ans {
-            nans.entry(ans_v.len())
+    fn answer(&self, mut uf: UnionFind) {
+        let mut keep = BTreeMap::new();
+        for v in 0..self.n {
+            if uf.root(v) != v {
+                continue;
+            }
+            let mut ans_e = vec![];
+            let mut ans_v = BTreeSet::new();
+            ans_v.insert(v);
+            let mut que = VecDeque::new();
+            que.push_back(v);
+            while let Some(v0) = que.pop_front() {
+                for &v1 in uf.graph[v0].iter() {
+                    if !ans_v.insert(v1) {
+                        continue;
+                    }
+                    ans_e.push((v0, v1));
+                    que.push_back(v1);
+                }
+            }
+            keep.entry(uf.group_size(v))
                 .or_insert(vec![])
                 .push((ans_v, ans_e));
         }
-        let mut ans = nans;
         println!("!");
-        for &tgt_sz in self.tgt_sz.iter() {
-            let (ans_v, ans_e) = ans.get_mut(&tgt_sz).unwrap().pop().unwrap();
+        for &sz in self.tgt_sz.iter() {
+            let (ans_v, ans_e) = keep.get_mut(&sz).unwrap().pop().unwrap();
             debug_assert_eq!(ans_v.len(), ans_e.len() + 1);
             for v in ans_v {
                 print!("{v} ");
@@ -6329,64 +6345,165 @@ impl Solver {
             }
         }
     }
-    fn solve(&self) {
-        const INF: i64 = 1i64 << 60;
-        let (es, dist) = {
-            const DIV: i64 = 4;
-            let mut es = Vec::with_capacity((self.n * (self.n - 1)) / 2);
-            let mut dist = vec![vec![0; self.n]; self.n];
-            let ys = self
-                .ini_boxes
-                .iter()
-                .map(|ini_box| {
-                    let dy = (ini_box.y1 - ini_box.y0 + 1) / DIV;
-                    (0..DIV)
-                        .map(|di| ini_box.y0 + (2 * di + 1) * dy / 2)
-                        .collect_vec()
-                })
-                .collect_vec();
-            let xs = self
-                .ini_boxes
-                .iter()
-                .map(|ini_box| {
-                    let dx = (ini_box.x1 - ini_box.x0 + 1) / DIV;
-                    (0..DIV)
-                        .map(|di| ini_box.x0 + (2 * di + 1) * dx / 2)
-                        .collect_vec()
-                })
-                .collect_vec();
-            for (b, (bys, bxs)) in ys.iter().zip(xs.iter()).enumerate() {
-                for (a, (ays, axs)) in ys.iter().zip(xs.iter()).take(b).enumerate() {
-                    let d = bys
-                        .iter()
-                        .map(|by| {
-                            ays.iter()
-                                .map(|ay| {
-                                    let dy = (ay - by).abs();
-                                    bxs.iter()
-                                        .map(|bx| {
-                                            axs.iter()
-                                                .map(|ax| {
-                                                    let dx = (ax - bx).abs();
-                                                    // calc
-                                                    ((dy * dy + dx * dx) as f64).sqrt() as i64
-                                                })
-                                                .sum::<i64>()
-                                        })
-                                        .sum::<i64>()
-                                })
-                                .sum::<i64>()
-                        })
-                        .sum::<i64>()
-                        / DIV.pow(4);
-                    es.push((d, (a, b)));
-                    dist[a][b] = d;
-                    dist[b][a] = d;
+    fn calc_dist(&self) -> Vec<Vec<i64>> {
+        const DIV: i64 = 4;
+        let mut dist = vec![vec![0; self.n]; self.n];
+        let ys = self
+            .ini_boxes
+            .iter()
+            .map(|ini_box| {
+                let dy = (ini_box.y1 - ini_box.y0 + 1) / DIV;
+                (0..DIV)
+                    .map(|di| ini_box.y0 + (2 * di + 1) * dy / 2)
+                    .collect_vec()
+            })
+            .collect_vec();
+        let xs = self
+            .ini_boxes
+            .iter()
+            .map(|ini_box| {
+                let dx = (ini_box.x1 - ini_box.x0 + 1) / DIV;
+                (0..DIV)
+                    .map(|di| ini_box.x0 + (2 * di + 1) * dx / 2)
+                    .collect_vec()
+            })
+            .collect_vec();
+        for (b, (bys, bxs)) in ys.iter().zip(xs.iter()).enumerate() {
+            for (a, (ays, axs)) in ys.iter().zip(xs.iter()).take(b).enumerate() {
+                let d = bys
+                    .iter()
+                    .map(|by| {
+                        ays.iter()
+                            .map(|ay| {
+                                let dy = (ay - by).abs();
+                                bxs.iter()
+                                    .map(|bx| {
+                                        axs.iter()
+                                            .map(|ax| {
+                                                let dx = (ax - bx).abs();
+                                                // calc
+                                                ((dy * dy + dx * dx) as f64).sqrt() as i64
+                                            })
+                                            .sum::<i64>()
+                                    })
+                                    .sum::<i64>()
+                            })
+                            .sum::<i64>()
+                    })
+                    .sum::<i64>()
+                    / DIV.pow(4);
+                dist[a][b] = d;
+                dist[b][a] = d;
+            }
+        }
+        dist
+    }
+    fn build_ini_tree(&self, dist: &[Vec<i64>]) -> Vec<Vec<usize>> {
+        let mut es = Vec::with_capacity((self.n * (self.n - 1)) / 2);
+        for (b, dist) in dist.iter().enumerate() {
+            for (a, &dist) in dist.iter().take(b).enumerate() {
+                es.push((dist, (a, b)));
+            }
+        }
+        es.sort();
+        let mut uf = UnionFind::new(self.n);
+        for (_, (a, b)) in es {
+            if uf.same(a, b) {
+                continue;
+            }
+            uf.unite(a, b);
+        }
+        uf.graph
+    }
+    fn refine_tree(&self, g0: Vec<Vec<usize>>) -> Vec<BTreeSet<usize>> {
+        let mut col = vec![2; self.n];
+        let mut que = VecDeque::new();
+        col[0] = 0;
+        que.push_back(0);
+        while let Some(v0) = que.pop_front() {
+            let col0 = col[v0];
+            let col1 = col0 ^ 1;
+            for &v1 in g0[v0].iter() {
+                if col[v1] < 2 {
+                    continue;
+                }
+                col[v1] = col1;
+                que.push_back(v1);
+            }
+        }
+        debug_assert!(col.iter().all(|&col| col < 2));
+        let col0 = col.iter().filter(|&&col| col == 0).count();
+        let col1 = self.n - col0;
+        let tgt_col = if col0 < col1 { 0 } else { 1 };
+        let mut es = vec![BTreeSet::new(); self.n];
+        for a in 0..self.n {
+            for &b in g0[a].iter() {
+                es[a].insert(b);
+                es[b].insert(a);
+            }
+        }
+        for v in (0..self.n).filter(|&v| col[v] == tgt_col) {
+            let mut qv = BTreeSet::new();
+            let mut que = VecDeque::new();
+            let mut dele = vec![];
+            qv.insert(v);
+            que.push_back(v);
+            'rec: while let Some(v0) = que.pop_front() {
+                for &v1 in es[v0].iter() {
+                    // rec
+                    if !qv.insert(v1) {
+                        continue;
+                    }
+                    dele.push((v0, v1));
+                    // fin
+                    if qv.len() >= self.l {
+                        break 'rec;
+                    }
+                    // next
+                    que.push_back(v1);
                 }
             }
-            es.sort();
-            (es, dist)
-        };
+            for (a, b) in dele {
+                assert!(es[a].remove(&b));
+                assert!(es[b].remove(&a));
+            }
+            {
+                print!("?");
+                print!(" {}", qv.len());
+                for v in qv.iter() {
+                    print!(" {v}");
+                }
+                println!();
+                for _ in 1..qv.len() {
+                    let a = read::<usize>();
+                    let b = read::<usize>();
+                    assert!(es[a].insert(b));
+                    assert!(es[b].insert(a));
+                }
+            }
+        }
+        #[cfg(debug_assertions)]
+        {
+            let mut uf = UnionFind::new(self.n);
+            let mut ad = 0;
+            for a in 0..self.n {
+                for &b in es[a].iter() {
+                    if a > b {
+                        assert!(es[b].contains(&a));
+                        continue;
+                    }
+                    assert!(!uf.same(a, b));
+                    uf.unite(a, b);
+                    ad += 1;
+                }
+            }
+            assert_eq!(1, uf.group_num());
+            assert_eq!(self.n - 1, ad);
+        }
+        es
+    }
+    fn build_group(&self, dist: &[Vec<i64>], es0: Vec<BTreeSet<usize>>) -> UnionFind {
+        const INF: i64 = 1i64 << 60;
         let mx = {
             let mut mx = 0;
             for &sz in self.tgt_sz.iter() {
@@ -6397,17 +6514,33 @@ impl Solver {
         let cap = {
             let mut cap = vec![0; mx + 2];
             for &sz in self.tgt_sz.iter() {
-                cap[sz] += 1;
+                cap[sz] += sz;
             }
             for sz in (0..mx).rev() {
                 cap[sz] += cap[sz + 1];
             }
             cap
         };
+        let mut es = {
+            let mut es = Vec::with_capacity((self.n * (self.n - 1)) / 2);
+            for b in 0..self.n {
+                for a in 0..b {
+                    let d = if es0[a].contains(&b) {
+                        (0, dist[a][b])
+                    } else {
+                        (1, dist[a][b])
+                    };
+                    es.push((d, (a, b)));
+                }
+            }
+            es.sort();
+            es
+        };
         let mut uf = UnionFind::new(self.n);
         let mut now = SegmentTree::<usize>::from_vec(|x, y| x + y, vec![0; mx + 1]);
         now.add(1, self.n);
-        loop {
+        let mut pre_ng_roots = HashSet::new();
+        for _lc in 1.. {
             for &(_, (a, b)) in es.iter() {
                 if uf.same(a, b) {
                     continue;
@@ -6415,13 +6548,13 @@ impl Solver {
                 let sz_a = uf.group_size(a);
                 let sz_b = uf.group_size(b);
                 let sz_ab = sz_a + sz_b;
-                if sz_ab > mx || now.query(sz_ab, mx) + 1 > cap[sz_ab] {
+                if sz_ab > mx || now.query(sz_ab, mx) + sz_ab > cap[sz_ab] {
                     continue;
                 }
                 uf.unite(a, b);
-                now.sub(sz_a, 1);
-                now.sub(sz_b, 1);
-                now.add(sz_ab, 1);
+                now.sub(sz_a, sz_a);
+                now.sub(sz_b, sz_b);
+                now.add(sz_ab, sz_ab);
                 debug_assert!(now.query(sz_ab, mx) <= cap[sz_ab]);
             }
             let mut ng_roots = vec![];
@@ -6447,7 +6580,68 @@ impl Solver {
                         que.push_back(v1);
                     }
                 }
-                now.sub(seen.len(), 1);
+                now.sub(seen.len(), seen.len());
+                now.add(1, seen.len());
+                uf.grp_num += seen.len() - 1;
+                for v in seen {
+                    uf.parents[v] = v;
+                    uf.grp_sz[v] = 1;
+                    uf.graph[v].clear();
+                }
+            }
+            if !pre_ng_roots.insert(ng_roots.clone()) {
+                break;
+            }
+            if ng_roots.is_empty() {
+                break;
+            }
+        }
+        let mut rand = XorShift64::new();
+        for lc in 1.. {
+            es.sort_by_cached_key(|((_cnt, dist), _ab)| {
+                *dist + ((rand.next_usize() % 100000000) as i64) % (lc * 100)
+            });
+            eprintln!("{lc}");
+            for &(_, (a, b)) in es.iter() {
+                if uf.same(a, b) {
+                    continue;
+                }
+                let sz_a = uf.group_size(a);
+                let sz_b = uf.group_size(b);
+                let sz_ab = sz_a + sz_b;
+                if sz_ab > mx || now.query(sz_ab, mx) + sz_ab > cap[sz_ab] {
+                    continue;
+                }
+                uf.unite(a, b);
+                now.sub(sz_a, sz_a);
+                now.sub(sz_b, sz_b);
+                now.add(sz_ab, sz_ab);
+                debug_assert!(now.query(sz_ab, mx) <= cap[sz_ab]);
+            }
+            let mut ng_roots = vec![];
+            for v in 0..self.n {
+                if uf.root(v) != v {
+                    continue;
+                }
+                let sz = uf.group_size(v);
+                if now.get(sz) != cap[sz] - cap[sz + 1] {
+                    ng_roots.push(v);
+                }
+            }
+            for &v in &ng_roots {
+                let mut que = VecDeque::new();
+                que.push_back(v);
+                let mut seen = BTreeSet::new();
+                seen.insert(v);
+                while let Some(v0) = que.pop_front() {
+                    for &v1 in uf.graph[v0].iter() {
+                        if !seen.insert(v1) {
+                            continue;
+                        }
+                        que.push_back(v1);
+                    }
+                }
+                now.sub(seen.len(), seen.len());
                 now.add(1, seen.len());
                 uf.grp_num += seen.len() - 1;
                 for v in seen {
@@ -6460,204 +6654,13 @@ impl Solver {
                 break;
             }
         }
-        let ans = self.build_answer(uf, dist);
-        self.answer(ans);
+        uf
     }
-    fn build_answer(
-        &self,
-        mut uf: UnionFind,
-        dist: Vec<Vec<i64>>,
-    ) -> Vec<(Vec<usize>, Vec<(usize, usize)>)> {
-        let mut ans = vec![];
-        let mut nuf = UnionFind::new(self.n);
-        let mut q = self.q;
-        for rv in 0..self.n {
-            if rv != uf.root(rv) {
-                continue;
-            }
-            if uf.group_size(rv) == 1 {
-                ans.push((vec![rv], vec![]));
-                continue;
-            }
-            if uf.group_size(rv) == 2 {
-                let nv = uf.graph[rv][0];
-                ans.push((vec![rv, nv], vec![(rv, nv)]));
-                continue;
-            }
-            if uf.group_size(rv) <= self.l {
-                let mut que = VecDeque::new();
-                que.push_back(rv);
-                let mut ans_v = BTreeSet::new();
-                ans_v.insert(rv);
-                let mut ans_e = vec![];
-                while let Some(v0) = que.pop_front() {
-                    for &v1 in uf.graph[v0].iter() {
-                        if !ans_v.insert(v1) {
-                            continue;
-                        }
-                        que.push_back(v1);
-                        ans_e.push((min(v0, v1), max(v0, v1)));
-                    }
-                }
-                if q > 0 {
-                    ans_e.clear();
-                    q -= 1;
-                    print!("? {}", ans_v.len());
-                    for &v in ans_v.iter() {
-                        print!(" {v}");
-                    }
-                    println!();
-                    for _ in 1..ans_v.len() {
-                        let a = read::<usize>();
-                        let b = read::<usize>();
-                        ans_e.push((a, b));
-                    }
-                }
-                ans.push((ans_v.into_iter().collect_vec(), ans_e));
-                continue;
-            }
-            // large group
-            let ans_v = {
-                let mut que = VecDeque::new();
-                que.push_back(rv);
-                let mut ans_v = BTreeSet::new();
-                ans_v.insert(rv);
-                while let Some(v0) = que.pop_front() {
-                    for &v1 in uf.graph[v0].iter() {
-                        if !ans_v.insert(v1) {
-                            continue;
-                        }
-                        que.push_back(v1);
-                    }
-                }
-                ans_v.into_iter().collect_vec()
-            };
-            let mut qued = BTreeMap::new();
-            for &v in ans_v.iter() {
-                qued.insert(v, false);
-            }
-            let mut es = vec![];
-            for (i1, &v1) in ans_v.iter().enumerate() {
-                for &v0 in ans_v.iter().take(i1) {
-                    let (v0, v1) = if v0 < v1 { (v0, v1) } else { (v1, v0) };
-                    es.push((dist[v0][v1], (v0, v1)));
-                }
-            }
-            es.sort();
-            let mut ecnt = BTreeMap::new();
-            for (_, (a, b)) in es {
-                if nuf.same(a, b) {
-                    continue;
-                }
-                let sz_a = nuf.group_size(a);
-                let sz_b = nuf.group_size(b);
-                if sz_a + sz_b >= self.l {
-                    let mut con = false;
-                    for (v, nv) in [(a, b), (b, a)] {
-                        if q > 0 && !qued[&nuf.root(v)] {
-                            let mut qv = BTreeSet::new();
-                            qv.insert(v);
-                            let mut que = VecDeque::new();
-                            que.push_back(v);
-                            while let Some(v0) = que.pop_front() {
-                                for &v1 in nuf.graph[v0].iter() {
-                                    if !qv.insert(v1) {
-                                        continue;
-                                    }
-
-                                    que.push_back(v1);
-                                }
-                            }
-                            if !con && qv.len() < self.l {
-                                assert!(qv.insert(nv));
-                                con = true;
-                            }
-                            {
-                                q -= 1;
-                                print!("? {}", qv.len());
-                                for &v in qv.iter() {
-                                    print!(" {v}");
-                                }
-                                println!();
-                                for _ in 1..qv.len() {
-                                    let a = read::<usize>();
-                                    let b = read::<usize>();
-                                    let (a, b) = if a < b { (a, b) } else { (b, a) };
-                                    *ecnt.entry((a, b)).or_insert(0) += 1;
-                                }
-                            }
-                        }
-                    }
-                    if q > 0 && !con {
-                        let mut qv = BTreeSet::new();
-                        qv.insert(a);
-                        qv.insert(b);
-                        let mut que = VecDeque::new();
-                        que.push_back(a);
-                        que.push_back(b);
-                        'bfs: while let Some(v0) = que.pop_front() {
-                            for &v1 in nuf.graph[v0].iter() {
-                                if !qv.insert(v1) {
-                                    continue;
-                                }
-                                if qv.len() >= self.l {
-                                    break 'bfs;
-                                }
-                                que.push_back(v1);
-                            }
-                        }
-                        {
-                            q -= 1;
-                            print!("? {}", qv.len());
-                            for &v in qv.iter() {
-                                print!(" {v}");
-                            }
-                            println!();
-                            for _ in 1..qv.len() {
-                                let a = read::<usize>();
-                                let b = read::<usize>();
-                                let (a, b) = if a < b { (a, b) } else { (b, a) };
-                                *ecnt.entry((a, b)).or_insert(0) += 1;
-                            }
-                        }
-                    }
-                }
-                nuf.unite(a, b);
-                *qued.get_mut(&nuf.root(a)).unwrap() = true;
-                if nuf.group_size(rv) == uf.group_size(rv) {
-                    break;
-                }
-            }
-            let mut es = vec![];
-            for (bi, &b) in ans_v.iter().enumerate() {
-                for &a in ans_v.iter().take(bi) {
-                    if let Some(&cnt) = ecnt.get(&(a, b)) {
-                        es.push(((Reverse(cnt), dist[a][b]), (a, b)));
-                    } else {
-                        es.push(((Reverse(0), dist[a][b]), (a, b)));
-                    }
-                }
-            }
-            es.sort();
-            nuf.grp_num += uf.group_size(rv) - 1;
-            for &v in ans_v.iter() {
-                nuf.parents[v] = v;
-                nuf.grp_sz[v] = 1;
-                nuf.graph[v].clear();
-            }
-            let mut ans_e = vec![];
-            for (_, (a, b)) in es {
-                if nuf.same(a, b) {
-                    continue;
-                }
-                ans_e.push((a, b));
-                nuf.unite(a, b);
-                if nuf.group_size(rv) == uf.group_size(rv) {
-                    break;
-                }
-            }
-            ans.push((ans_v, ans_e));
-        }
-        ans
+    fn solve(&self) {
+        let dist = self.calc_dist();
+        let ini_tree = self.build_ini_tree(&dist);
+        let es = self.refine_tree(ini_tree);
+        let ans = self.build_group(&dist, es);
+        self.answer(ans);
     }
 }
