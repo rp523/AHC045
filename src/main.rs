@@ -6539,60 +6539,59 @@ impl Solver {
         loop {
             let mut found = false;
             for (&tgt_sz1, _) in tgt_sz.iter().rev() {
-                let Some(vs) = sub_sz_list.get(&tgt_sz1) else {
-                    continue;
-                };
-                found = true;
-                let &top = vs.iter().next().unwrap();
-                // lower connect && remove
-                {
-                    let mut que = VecDeque::new();
-                    let mut seen = HashSet::new();
-                    que.push_back(top);
-                    seen.insert(top);
-                    seen.insert(par[top]);
-                    while let Some(v0) = que.pop_front() {
-                        debug_assert!(sub_sz[v0] > 0);
-                        assert!(sub_sz_list.get_mut(&sub_sz[v0]).unwrap().remove(&v0));
-                        if sub_sz_list[&sub_sz[v0]].is_empty() {
-                            sub_sz_list.remove(&sub_sz[v0]);
-                        }
-                        sub_sz[v0] = 0;
-                        for &v1 in es0[v0].iter() {
-                            if sub_sz[v1] == 0 {
-                                continue;
+                if let Some(vs) = sub_sz_list.get(&tgt_sz1) {
+                    found = true;
+                    let &top = vs.iter().next().unwrap();
+                    // lower connect && remove
+                    {
+                        let mut que = VecDeque::new();
+                        let mut seen = HashSet::new();
+                        que.push_back(top);
+                        seen.insert(top);
+                        seen.insert(par[top]);
+                        while let Some(v0) = que.pop_front() {
+                            debug_assert!(sub_sz[v0] > 0);
+                            assert!(sub_sz_list.get_mut(&sub_sz[v0]).unwrap().remove(&v0));
+                            if sub_sz_list[&sub_sz[v0]].is_empty() {
+                                sub_sz_list.remove(&sub_sz[v0]);
                             }
-                            if !seen.insert(v1) {
-                                continue;
+                            sub_sz[v0] = 0;
+                            for &v1 in es0[v0].iter() {
+                                if sub_sz[v1] == 0 {
+                                    continue;
+                                }
+                                if !seen.insert(v1) {
+                                    continue;
+                                }
+                                uf.unite(v0, v1);
+                                que.push_back(v1);
                             }
-                            uf.unite(v0, v1);
-                            que.push_back(v1);
                         }
                     }
-                }
-                // upper update
-                {
-                    let mut v = top;
-                    while par[v] != v {
-                        v = par[v];
-                        debug_assert!(sub_sz[v] > 0);
-                        assert!(sub_sz_list.get_mut(&sub_sz[v]).unwrap().remove(&v));
-                        if sub_sz_list[&sub_sz[v]].is_empty() {
-                            sub_sz_list.remove(&sub_sz[v]);
+                    // upper update
+                    {
+                        let mut v = top;
+                        while par[v] != v {
+                            v = par[v];
+                            debug_assert!(sub_sz[v] > 0);
+                            assert!(sub_sz_list.get_mut(&sub_sz[v]).unwrap().remove(&v));
+                            if sub_sz_list[&sub_sz[v]].is_empty() {
+                                sub_sz_list.remove(&sub_sz[v]);
+                            }
+                            sub_sz[v] = 1 + es0[v]
+                                .iter()
+                                .filter(|&&nv| nv != par[v])
+                                .map(|&nv| sub_sz[nv])
+                                .sum::<usize>();
+                            assert!(sub_sz_list
+                                .entry(sub_sz[v])
+                                .or_insert(BTreeSet::new())
+                                .insert(v));
                         }
-                        sub_sz[v] = 1 + es0[v]
-                            .iter()
-                            .filter(|&&nv| nv != par[v])
-                            .map(|&nv| sub_sz[nv])
-                            .sum::<usize>();
-                        assert!(sub_sz_list
-                            .entry(sub_sz[v])
-                            .or_insert(BTreeSet::new())
-                            .insert(v));
                     }
+                    tgt_sz.decr(&tgt_sz1);
+                    break;
                 }
-                tgt_sz.decr(&tgt_sz1);
-                break;
             }
             if !found {
                 break;
