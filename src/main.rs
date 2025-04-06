@@ -6502,6 +6502,104 @@ impl Solver {
         }
         es
     }
+    fn split_into_forest(&self, es0: &[BTreeSet<usize>]) -> UnionFind {
+        fn init_sub_sz(
+            v: usize,
+            p: usize,
+            g: &[BTreeSet<usize>],
+            sub_sz: &mut [usize],
+            par: &mut [usize],
+        ) {
+            sub_sz[v] = 1;
+            for &nv in g[v].iter() {
+                if nv == p {
+                    continue;
+                }
+                init_sub_sz(nv, v, g, sub_sz, par);
+                sub_sz[v] += sub_sz[nv];
+                par[nv] = v;
+            }
+        }
+        let mut sub_sz = vec![0; self.n];
+        let mut par = vec![0; self.n];
+        init_sub_sz(0, self.n, es0, &mut sub_sz, &mut par);
+        let par = par;
+        let mut sub_sz_list = BTreeMap::new();
+        for (v, &sub_sz) in sub_sz.iter().enumerate() {
+            assert!(sub_sz_list
+                .entry(sub_sz)
+                .or_insert(BTreeSet::new())
+                .insert(v));
+        }
+        let mut tgt_sz = BTreeMap::new();
+        for &sz in self.tgt_sz.iter() {
+            tgt_sz.incr(sz);
+        }
+        let mut uf = UnionFind::new(self.n);
+        loop {
+            let mut found = false;
+            for (&tgt_sz1, _) in tgt_sz.iter().rev() {
+                let Some(vs) = sub_sz_list.get(&tgt_sz1) else {
+                    continue;
+                };
+                found = true;
+                let &top = vs.iter().next().unwrap();
+                // lower connect && remove
+                {
+                    let mut que = VecDeque::new();
+                    let mut seen = HashSet::new();
+                    que.push_back(top);
+                    seen.insert(top);
+                    seen.insert(par[top]);
+                    while let Some(v0) = que.pop_front() {
+                        debug_assert!(sub_sz[v0] > 0);
+                        assert!(sub_sz_list.get_mut(&sub_sz[v0]).unwrap().remove(&v0));
+                        if sub_sz_list[&sub_sz[v0]].is_empty() {
+                            sub_sz_list.remove(&sub_sz[v0]);
+                        }
+                        sub_sz[v0] = 0;
+                        for &v1 in es0[v0].iter() {
+                            if sub_sz[v1] == 0 {
+                                continue;
+                            }
+                            if !seen.insert(v1) {
+                                continue;
+                            }
+                            uf.unite(v0, v1);
+                            que.push_back(v1);
+                        }
+                    }
+                }
+                // upper update
+                {
+                    let mut v = top;
+                    while par[v] != v {
+                        v = par[v];
+                        debug_assert!(sub_sz[v] > 0);
+                        assert!(sub_sz_list.get_mut(&sub_sz[v]).unwrap().remove(&v));
+                        if sub_sz_list[&sub_sz[v]].is_empty() {
+                            sub_sz_list.remove(&sub_sz[v]);
+                        }
+                        sub_sz[v] = 1 + es0[v]
+                            .iter()
+                            .filter(|&&nv| nv != par[v])
+                            .map(|&nv| sub_sz[nv])
+                            .sum::<usize>();
+                        assert!(sub_sz_list
+                            .entry(sub_sz[v])
+                            .or_insert(BTreeSet::new())
+                            .insert(v));
+                    }
+                }
+                tgt_sz.decr(&tgt_sz1);
+                break;
+            }
+            if !found {
+                break;
+            }
+        }
+        uf
+    }
     fn remain_unite_force(&self, uf: &mut UnionFind, es0: &[BTreeSet<usize>], dist: &[Vec<i64>]) {
         let mut rem_task = BTreeMap::new();
         for &sz in self.tgt_sz.iter() {
@@ -6557,99 +6655,7 @@ impl Solver {
         }
     }
     fn build_group(&self, dist: &[Vec<i64>], es0: Vec<BTreeSet<usize>>) -> UnionFind {
-        const INF: i64 = 1i64 << 60;
-        let mx = {
-            let mut mx = 0;
-            for &sz in self.tgt_sz.iter() {
-                mx.chmax(sz);
-            }
-            mx
-        };
-        let cap = {
-            let mut cap = vec![0; mx + 2];
-            for &sz in self.tgt_sz.iter() {
-                cap[sz] += sz;
-            }
-            for sz in (0..mx).rev() {
-                cap[sz] += cap[sz + 1];
-            }
-            cap
-        };
-        let es = {
-            let mut es = Vec::with_capacity((self.n * (self.n - 1)) / 2);
-            for b in 0..self.n {
-                for a in 0..b {
-                    let d = if es0[a].contains(&b) {
-                        (0, dist[a][b])
-                    } else {
-                        (1, dist[a][b])
-                    };
-                    es.push((d, (a, b)));
-                }
-            }
-            es.sort();
-            es
-        };
-        let mut uf = UnionFind::new(self.n);
-        let mut now = SegmentTree::<usize>::from_vec(|x, y| x + y, vec![0; mx + 1]);
-        now.add(1, self.n);
-        let mut pre_ng_roots = HashSet::new();
-        for _lc in 1.. {
-            for &(_, (a, b)) in es.iter() {
-                if uf.same(a, b) {
-                    continue;
-                }
-                let sz_a = uf.group_size(a);
-                let sz_b = uf.group_size(b);
-                let sz_ab = sz_a + sz_b;
-                if sz_ab > mx || now.query(sz_ab, mx) + sz_ab > cap[sz_ab] {
-                    continue;
-                }
-                uf.unite(a, b);
-                now.sub(sz_a, sz_a);
-                now.sub(sz_b, sz_b);
-                now.add(sz_ab, sz_ab);
-                debug_assert!(now.query(sz_ab, mx) <= cap[sz_ab]);
-            }
-            let mut ng_roots = vec![];
-            for v in 0..self.n {
-                if uf.root(v) != v {
-                    continue;
-                }
-                let sz = uf.group_size(v);
-                if now.get(sz) != cap[sz] - cap[sz + 1] {
-                    ng_roots.push(v);
-                }
-            }
-            for &v in &ng_roots {
-                let mut que = VecDeque::new();
-                que.push_back(v);
-                let mut seen = BTreeSet::new();
-                seen.insert(v);
-                while let Some(v0) = que.pop_front() {
-                    for &v1 in uf.graph[v0].iter() {
-                        if !seen.insert(v1) {
-                            continue;
-                        }
-                        que.push_back(v1);
-                    }
-                }
-                now.sub(seen.len(), seen.len());
-                now.add(1, seen.len());
-                uf.grp_num += seen.len() - 1;
-                for v in seen {
-                    uf.parents[v] = v;
-                    uf.grp_sz[v] = 1;
-                    uf.graph[v].clear();
-                }
-            }
-            if !pre_ng_roots.insert(ng_roots.clone()) {
-                break;
-            }
-            if ng_roots.is_empty() {
-                break;
-            }
-        }
+        let mut uf = self.split_into_forest(&es0);
         self.remain_unite_force(&mut uf, &es0, dist);
         uf
     }
