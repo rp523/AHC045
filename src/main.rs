@@ -6692,16 +6692,12 @@ impl Solver {
             }
         }
     }
-    fn build_group(&self, dist: &[Vec<i64>], es0: Vec<BTreeSet<usize>>) -> UnionFind {
-        let mut uf = self.split_into_forest(&es0);
-        self.remain_unite_force(&mut uf, &es0, dist);
-        uf
-    }
     fn solve(&self) {
         let dist = self.calc_dist();
         let ini_tree = self.build_ini_tree(&dist);
         let es = self.refine_tree(ini_tree);
-        let ans = self.build_group(&dist, es);
-        self.answer(ans);
+        let mut uf = self.split_into_forest(&es);
+        self.remain_unite_force(&mut uf, &es, &dist);
+        self.answer(uf);
     }
 }
