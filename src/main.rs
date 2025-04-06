@@ -6523,7 +6523,6 @@ impl Solver {
         let mut sub_sz = vec![0; self.n];
         let mut par = vec![0; self.n];
         init_sub_sz(0, self.n, es0, &mut sub_sz, &mut par);
-        let par = par;
         let mut sub_sz_list = BTreeMap::new();
         for (v, &sub_sz) in sub_sz.iter().enumerate() {
             assert!(sub_sz_list
@@ -6536,19 +6535,20 @@ impl Solver {
             tgt_sz.incr(sz);
         }
         let mut uf = UnionFind::new(self.n);
+        let mut tot = self.n;
         loop {
             let mut found = false;
             for (&tgt_sz1, _) in tgt_sz.iter().rev() {
                 if let Some(vs) = sub_sz_list.get(&tgt_sz1) {
                     found = true;
-                    let &top = vs.iter().next().unwrap();
+                    let &lower_top = vs.iter().next().unwrap();
                     // lower connect && remove
                     {
                         let mut que = VecDeque::new();
                         let mut seen = HashSet::new();
-                        que.push_back(top);
-                        seen.insert(top);
-                        seen.insert(par[top]);
+                        que.push_back(lower_top);
+                        seen.insert(lower_top);
+                        seen.insert(par[lower_top]);
                         while let Some(v0) = que.pop_front() {
                             debug_assert!(sub_sz[v0] > 0);
                             assert!(sub_sz_list.get_mut(&sub_sz[v0]).unwrap().remove(&v0));
@@ -6567,10 +6567,11 @@ impl Solver {
                                 que.push_back(v1);
                             }
                         }
+                        debug_assert_eq!(tgt_sz1, uf.group_size(lower_top));
                     }
                     // upper update
                     {
-                        let mut v = top;
+                        let mut v = lower_top;
                         while par[v] != v {
                             v = par[v];
                             debug_assert!(sub_sz[v] > 0);
@@ -6589,6 +6590,44 @@ impl Solver {
                                 .insert(v));
                         }
                     }
+                    // total
+                    tot -= tgt_sz1;
+                    tgt_sz.decr(&tgt_sz1);
+                    break;
+                } else if let Some(vs) = sub_sz_list.get(&(tot - tgt_sz1)) {
+                    found = true;
+                    let &lower_top = vs.iter().next().unwrap();
+                    // upper connect && remove
+                    {
+                        let mut que = VecDeque::new();
+                        let mut seen = HashSet::new();
+                        que.push_back(par[lower_top]);
+                        seen.insert(lower_top);
+                        seen.insert(par[lower_top]);
+                        while let Some(v0) = que.pop_front() {
+                            debug_assert!(sub_sz[v0] > 0);
+                            assert!(sub_sz_list.get_mut(&sub_sz[v0]).unwrap().remove(&v0));
+                            if sub_sz_list[&sub_sz[v0]].is_empty() {
+                                sub_sz_list.remove(&sub_sz[v0]);
+                            }
+                            sub_sz[v0] = 0;
+                            for &v1 in es0[v0].iter() {
+                                if sub_sz[v1] == 0 {
+                                    continue;
+                                }
+                                if !seen.insert(v1) {
+                                    continue;
+                                }
+                                uf.unite(v0, v1);
+                                que.push_back(v1);
+                            }
+                        }
+                        debug_assert_eq!(tgt_sz1, uf.group_size(par[lower_top]));
+                    }
+                    // lower update
+                    par[lower_top] = lower_top;
+                    // total
+                    tot -= tgt_sz1;
                     tgt_sz.decr(&tgt_sz1);
                     break;
                 }
