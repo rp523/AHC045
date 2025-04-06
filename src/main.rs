@@ -6502,6 +6502,60 @@ impl Solver {
         }
         es
     }
+    fn remain_unite_force(&self, uf: &mut UnionFind, es0: &[BTreeSet<usize>], dist: &[Vec<i64>]) {
+        let mut rem_task = BTreeMap::new();
+        for &sz in self.tgt_sz.iter() {
+            if sz == 1 {
+                continue;
+            }
+            rem_task.incr(sz);
+        }
+        let mut isos = BTreeSet::new();
+        for v in 0..self.n {
+            if uf.root(v) != v {
+                continue;
+            }
+            let sz = uf.group_size(v);
+            if sz == 1 {
+                isos.insert(v);
+            } else {
+                rem_task.decr(&sz);
+            }
+        }
+        while let Some((tgt_sz, rem)) = rem_task.pop_last() {
+            debug_assert!(tgt_sz > 1);
+            for _ in 0..rem {
+                let ini = isos.pop_first().unwrap();
+                let mut que = BinaryHeap::new();
+                let mut now = 1;
+                for &ni in isos.iter() {
+                    let nx = if es0[ini].contains(&ni) { 0 } else { 1 };
+                    que.push((Reverse((nx, dist[ini][ni])), (ni, ini)));
+                }
+                while let Some((_delta, (v0, pv))) = que.pop() {
+                    if uf.same(v0, pv) {
+                        continue;
+                    }
+                    if !isos.contains(&v0) {
+                        continue;
+                    }
+                    uf.unite(v0, pv);
+                    assert!(isos.remove(&v0));
+                    now += 1;
+                    if now >= tgt_sz {
+                        break;
+                    }
+                    for &v1 in isos.iter() {
+                        if uf.same(v0, v1) {
+                            continue;
+                        }
+                        let nx = if es0[v0].contains(&v1) { 0 } else { 1 };
+                        que.push((Reverse((nx, dist[v0][v1])), (v1, v0)));
+                    }
+                }
+            }
+        }
+    }
     fn build_group(&self, dist: &[Vec<i64>], es0: Vec<BTreeSet<usize>>) -> UnionFind {
         const INF: i64 = 1i64 << 60;
         let mx = {
@@ -6521,7 +6575,7 @@ impl Solver {
             }
             cap
         };
-        let mut es = {
+        let es = {
             let mut es = Vec::with_capacity((self.n * (self.n - 1)) / 2);
             for b in 0..self.n {
                 for a in 0..b {
@@ -6596,64 +6650,7 @@ impl Solver {
                 break;
             }
         }
-        let mut rand = XorShift64::new();
-        for lc in 1.. {
-            es.sort_by_cached_key(|((_cnt, dist), _ab)| {
-                *dist + ((rand.next_usize() % 100000000) as i64) % (lc * 500)
-            });
-            eprintln!("{lc}");
-            for &(_, (a, b)) in es.iter() {
-                if uf.same(a, b) {
-                    continue;
-                }
-                let sz_a = uf.group_size(a);
-                let sz_b = uf.group_size(b);
-                let sz_ab = sz_a + sz_b;
-                if sz_ab > mx || now.query(sz_ab, mx) + sz_ab > cap[sz_ab] {
-                    continue;
-                }
-                uf.unite(a, b);
-                now.sub(sz_a, sz_a);
-                now.sub(sz_b, sz_b);
-                now.add(sz_ab, sz_ab);
-                debug_assert!(now.query(sz_ab, mx) <= cap[sz_ab]);
-            }
-            let mut ng_roots = vec![];
-            for v in 0..self.n {
-                if uf.root(v) != v {
-                    continue;
-                }
-                let sz = uf.group_size(v);
-                if now.get(sz) != cap[sz] - cap[sz + 1] {
-                    ng_roots.push(v);
-                }
-            }
-            for &v in &ng_roots {
-                let mut que = VecDeque::new();
-                que.push_back(v);
-                let mut seen = BTreeSet::new();
-                seen.insert(v);
-                while let Some(v0) = que.pop_front() {
-                    for &v1 in uf.graph[v0].iter() {
-                        if !seen.insert(v1) {
-                            continue;
-                        }
-                        que.push_back(v1);
-                    }
-                }
-                now.sub(seen.len(), seen.len());
-                now.add(1, seen.len());
-                uf.grp_num += seen.len() - 1;
-                for v in seen {
-                    uf.parents[v] = v;
-                    uf.grp_sz[v] = 1;
-                    uf.graph[v].clear();
-                }
-            }
-            if ng_roots.is_empty() {
-                break;
-            }
-        }
+        self.remain_unite_force(&mut uf, &es0, dist);
         uf
     }
     fn solve(&self) {
