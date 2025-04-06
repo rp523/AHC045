@@ -6557,7 +6557,7 @@ impl Solver {
         }
         es
     }
-    fn split_into_forest(&self, es0: &[BTreeSet<usize>]) -> UnionFind {
+    fn split_into_forest(&self, es0: &[BTreeSet<usize>], dist: &[Vec<i64>]) -> UnionFind {
         fn init_sub_sz(
             v: usize,
             p: usize,
@@ -6592,16 +6592,19 @@ impl Solver {
         let mut uf = UnionFind::new(self.n);
         let mut tot = self.n;
         loop {
-            let mut found = false;
-            for (&tgt_sz1, _) in tgt_sz.iter().rev() {
-                if let Some(vs) = sub_sz_list.get(&tgt_sz1) {
-                    found = true;
-                    let &lower_top = vs.iter().next().unwrap();
-                    // lower connect && remove
+            let mut update =
+                |lower_top: usize,
+                 del_low: bool,
+                 sub_sz_list: &mut BTreeMap<usize, BTreeSet<usize>>| {
+                    // connect && remove
                     {
                         let mut que = VecDeque::new();
                         let mut seen = HashSet::new();
-                        que.push_back(lower_top);
+                        if del_low {
+                            que.push_back(lower_top);
+                        } else {
+                            que.push_back(par[lower_top]);
+                        }
                         seen.insert(lower_top);
                         seen.insert(par[lower_top]);
                         while let Some(v0) = que.pop_front() {
@@ -6622,10 +6625,9 @@ impl Solver {
                                 que.push_back(v1);
                             }
                         }
-                        debug_assert_eq!(tgt_sz1, uf.group_size(lower_top));
                     }
-                    // upper update
-                    {
+                    // update
+                    if del_low {
                         let mut v = lower_top;
                         while par[v] != v {
                             v = par[v];
@@ -6645,47 +6647,33 @@ impl Solver {
                                 .insert(v));
                         }
                     }
-                    // total
-                    tot -= tgt_sz1;
-                    tgt_sz.decr(&tgt_sz1);
-                    break;
-                } else if let Some(vs) = sub_sz_list.get(&(tot - tgt_sz1)) {
-                    found = true;
-                    let &lower_top = vs.iter().next().unwrap();
-                    // upper connect && remove
-                    {
-                        let mut que = VecDeque::new();
-                        let mut seen = HashSet::new();
-                        que.push_back(par[lower_top]);
-                        seen.insert(lower_top);
-                        seen.insert(par[lower_top]);
-                        while let Some(v0) = que.pop_front() {
-                            debug_assert!(sub_sz[v0] > 0);
-                            assert!(sub_sz_list.get_mut(&sub_sz[v0]).unwrap().remove(&v0));
-                            if sub_sz_list[&sub_sz[v0]].is_empty() {
-                                sub_sz_list.remove(&sub_sz[v0]);
-                            }
-                            sub_sz[v0] = 0;
-                            for &v1 in es0[v0].iter() {
-                                if sub_sz[v1] == 0 {
-                                    continue;
-                                }
-                                if !seen.insert(v1) {
-                                    continue;
-                                }
-                                uf.unite(v0, v1);
-                                que.push_back(v1);
-                            }
-                        }
-                        debug_assert_eq!(tgt_sz1, uf.group_size(par[lower_top]));
+                };
+            let mut found = false;
+            for (&tgt_sz1, _) in tgt_sz.iter().rev() {
+                let mut del = None;
+                if let Some(vs) = sub_sz_list.get(&tgt_sz1) {
+                    for &v in vs.iter() {
+                        let p = par[v];
+                        let d = dist[v][p];
+                        del.chmax((d, v, true));
                     }
-                    // lower update
-                    par[lower_top] = lower_top;
-                    // total
-                    tot -= tgt_sz1;
-                    tgt_sz.decr(&tgt_sz1);
-                    break;
                 }
+                if let Some(vs) = sub_sz_list.get(&(tot - tgt_sz1)) {
+                    for &v in vs.iter() {
+                        let p = par[v];
+                        let d = dist[v][p];
+                        del.chmax((d, v, false));
+                    }
+                }
+                let Some((_, lower_top, del_low)) = del else {
+                    continue;
+                };
+                found = true;
+                update(lower_top, del_low, &mut sub_sz_list);
+                par[lower_top] = lower_top;
+                tot -= tgt_sz1;
+                tgt_sz.decr(&tgt_sz1);
+                break;
             }
             if !found {
                 break;
@@ -6751,7 +6739,7 @@ impl Solver {
         let dist = self.calc_dist();
         let ini_tree = self.build_ini_tree(&dist);
         let es = self.refine_tree(ini_tree);
-        let mut uf = self.split_into_forest(&es);
+        let mut uf = self.split_into_forest(&es, &dist);
         self.remain_unite_force(&mut uf, &es, &dist);
         self.answer(uf);
     }
