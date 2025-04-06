@@ -6435,21 +6435,53 @@ impl Solver {
         let col0 = col.iter().filter(|&&col| col == 0).count();
         let col1 = self.n - col0;
         let tgt_col = if col0 < col1 { 0 } else { 1 };
+        let eval = {
+            fn bfs(ini: usize, g: &[Vec<usize>]) -> (Vec<usize>, Vec<usize>, usize) {
+                const INF: usize = 1usize << 60;
+                let mut dist = vec![INF; g.len()];
+                let mut par = vec![ini; g.len()];
+                dist[ini] = 0;
+                let mut que = VecDeque::new();
+                que.push_back(ini);
+                while let Some(v0) = que.pop_front() {
+                    let d1 = dist[v0] + 1;
+                    for &v1 in g[v0].iter() {
+                        if dist[v1].chmin(d1) {
+                            que.push_back(v1);
+                            par[v1] = v0;
+                        }
+                    }
+                }
+                let mut dmax = (0, 0);
+                for (v, &d) in dist.iter().enumerate() {
+                    dmax.chmax((d, v));
+                }
+                (dist, par, dmax.1)
+            }
+            let (_, _, e0) = bfs(0, &g0);
+            let (dist1, par1, e1) = bfs(e0, &g0);
+            let mut c = e1;
+            while dist1[c] != dist1[e1] / 2 {
+                c = par1[c];
+            }
+            let (dist, _, _) = bfs(c, &g0);
+            dist.into_iter().map(|d| self.n - d).collect_vec()
+        };
         let mut es = vec![BTreeSet::new(); self.n];
         for a in 0..self.n {
             for &b in g0[a].iter() {
-                es[a].insert(b);
-                es[b].insert(a);
+                es[a].insert((eval[b], b));
+                es[b].insert((eval[a], a));
             }
         }
-        for v in (0..self.n).filter(|&v| col[v] == tgt_col) {
+        let mut question = |v: usize, unseen: &mut BTreeSet<usize>, question_rem: &mut usize| {
             let mut qv = BTreeSet::new();
             let mut que = VecDeque::new();
             let mut dele = vec![];
             qv.insert(v);
             que.push_back(v);
             'rec: while let Some(v0) = que.pop_front() {
-                for &v1 in es[v0].iter() {
+                for &(_, v1) in es[v0].iter() {
                     // rec
                     if !qv.insert(v1) {
                         continue;
@@ -6464,10 +6496,11 @@ impl Solver {
                 }
             }
             for (a, b) in dele {
-                assert!(es[a].remove(&b));
-                assert!(es[b].remove(&a));
+                assert!(es[a].remove(&(eval[b], b)));
+                assert!(es[b].remove(&(eval[a], a)));
             }
             {
+                *question_rem -= 1;
                 print!("?");
                 print!(" {}", qv.len());
                 for v in qv.iter() {
@@ -6477,11 +6510,33 @@ impl Solver {
                 for _ in 1..qv.len() {
                     let a = read::<usize>();
                     let b = read::<usize>();
-                    assert!(es[a].insert(b));
-                    assert!(es[b].insert(a));
+                    assert!(es[a].insert((eval[b], b)));
+                    assert!(es[b].insert((eval[a], a)));
+                    unseen.remove(&a);
+                    unseen.remove(&b);
                 }
             }
+        };
+        let mut unseen = (0..self.n).collect::<BTreeSet<_>>();
+        let mut question_rem = self.q;
+        for v in (0..self.n).filter(|&v| col[v] == tgt_col) {
+            question(v, &mut unseen, &mut question_rem);
         }
+        for v in unseen.clone().into_iter().take(question_rem) {
+            question(v, &mut unseen, &mut question_rem);
+        }
+        let mut rand = XorShift64::new();
+        for _ in 0..question_rem {
+            let v = rand.next_usize() % self.n;
+            question(v, &mut unseen, &mut question_rem);
+        }
+        let mut nes = vec![BTreeSet::new(); self.n];
+        for v in 0..self.n {
+            for &(_, nv) in es[v].iter() {
+                nes[v].insert(nv);
+            }
+        }
+        let es = nes;
         #[cfg(debug_assertions)]
         {
             let mut uf = UnionFind::new(self.n);
