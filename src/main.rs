@@ -6398,7 +6398,7 @@ impl Solver {
         }
         dist
     }
-    fn build_ini_tree(&self, dist: &[Vec<i64>]) -> Vec<Vec<usize>> {
+    fn build_ini_tree(&self, dist: &[Vec<i64>]) -> Vec<BTreeSet<usize>> {
         let mut es = Vec::with_capacity((self.n * (self.n - 1)) / 2);
         for (b, dist) in dist.iter().enumerate() {
             for (a, &dist) in dist.iter().take(b).enumerate() {
@@ -6407,15 +6407,18 @@ impl Solver {
         }
         es.sort();
         let mut uf = UnionFind::new(self.n);
+        let mut g = vec![BTreeSet::new(); self.n];
         for (_, (a, b)) in es {
             if uf.same(a, b) {
                 continue;
             }
             uf.unite(a, b);
+            g[a].insert(b);
+            g[b].insert(a);
         }
-        uf.graph
+        g
     }
-    fn refine_tree(&self, g0: Vec<Vec<usize>>) -> Vec<BTreeSet<usize>> {
+    fn refine_tree(&self, g0: Vec<BTreeSet<usize>>) -> Vec<BTreeSet<usize>> {
         let mut col = vec![2; self.n];
         let mut que = VecDeque::new();
         col[0] = 0;
@@ -6436,7 +6439,7 @@ impl Solver {
         let col1 = self.n - col0;
         let tgt_col = if col0 < col1 { 0 } else { 1 };
         let eval = {
-            fn bfs(ini: usize, g: &[Vec<usize>]) -> (Vec<usize>, Vec<usize>, usize) {
+            fn bfs(ini: usize, g: &[BTreeSet<usize>]) -> (Vec<usize>, Vec<usize>, usize) {
                 const INF: usize = 1usize << 60;
                 let mut dist = vec![INF; g.len()];
                 let mut par = vec![ini; g.len()];
@@ -6474,7 +6477,7 @@ impl Solver {
                 es[b].insert((eval[a], a));
             }
         }
-        let mut question = |v: usize, unseen: &mut BTreeSet<usize>, question_rem: &mut usize| {
+        let mut question = |v: usize, unseen: &mut BTreeSet<usize>| {
             let mut qv = BTreeSet::new();
             let mut que = VecDeque::new();
             let mut dele = vec![];
@@ -6500,7 +6503,6 @@ impl Solver {
                 assert!(es[b].remove(&(eval[a], a)));
             }
             {
-                *question_rem -= 1;
                 print!("?");
                 print!(" {}", qv.len());
                 for v in qv.iter() {
@@ -6520,15 +6522,21 @@ impl Solver {
         let mut unseen = (0..self.n).collect::<BTreeSet<_>>();
         let mut question_rem = self.q;
         for v in (0..self.n).filter(|&v| col[v] == tgt_col) {
-            question(v, &mut unseen, &mut question_rem);
+            question_rem -= 1;
+            question(v, &mut unseen);
         }
-        for v in unseen.clone().into_iter().take(question_rem) {
-            question(v, &mut unseen, &mut question_rem);
+        while let Some(&v) = unseen.iter().next() {
+            if question_rem == 0 {
+                break;
+            }
+            question_rem -= 1;
+            question(v, &mut unseen);
         }
         let mut rand = XorShift64::new();
         for _ in 0..question_rem {
             let v = rand.next_usize() % self.n;
-            question(v, &mut unseen, &mut question_rem);
+            question_rem -= 1;
+            question(v, &mut unseen);
         }
         let mut nes = vec![BTreeSet::new(); self.n];
         for v in 0..self.n {
